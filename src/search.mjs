@@ -46,7 +46,21 @@ export async function collect(paths, { maxChunks = 20000, chunkLines, globs = []
   return { candidates, skipped: skippedFiles.length, skippedFiles, files: files.size, bytesRead, parsers };
 }
 
-export async function score(query, candidates, { token, endpoint, fetchImpl = fetch, useCache = false, concurrency = 3, signal, stats = {} } = {}) {
+function makeBatches(entries) {
+  const batches = [];
+  let batch = [], chars = 0;
+  for (const entry of entries) {
+    const candidate = entry.candidate || entry;
+    const size = candidate.text.length + (candidate.context?.length || 0);
+    if (size > 24000) throw new Error(`Chunk too large: ${candidate.path}:${candidate.line}. Use --chunk-lines 1.`);
+    if (batch.length === 16 || chars + size > 24000) { batches.push(batch); batch = []; chars = 0; }
+    batch.push(entry); chars += size;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
+export async function score(query, candidates, { token, endpoint, fetchImpl = fetch, useCache = false, concurrency = 3, signal, stats = {}, requestIntervalMs = 0, onProgress } = {}) {
   if (!query.trim() || query.length > 2000) throw new Error('Query must contain 1–2000 characters.');
   const saved = await credentials();
   token ??= saved.token;
@@ -61,17 +75,15 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1) { results.push({ ...candidate, probability: value }); stats.cacheHits++; }
     else pending.push({ candidate, key });
   }
-  const batches = [];
-  for (let offset = 0; offset < pending.length;) {
-    const batch = []; let chars = 0;
-    while (offset < pending.length && batch.length < 16) {
-      const entry = pending[offset];
-      if (entry.candidate.text.length + (entry.candidate.context?.length || 0) > 24000) throw new Error(`Chunk too large: ${entry.candidate.path}:${entry.candidate.line}. Use --chunk-lines 1.`);
-      if (chars + entry.candidate.text.length + (entry.candidate.context?.length || 0) > 24000) break;
-      batch.push(entry); chars += entry.candidate.text.length + (entry.candidate.context?.length || 0); offset++;
-    }
-    batches.push(batch);
-  }
+  const batches = makeBatches(pending);
+  let nextRequestAt = 0;
+  const pace = async () => {
+    const wait = Math.max(0, nextRequestAt - Date.now());
+    nextRequestAt = Date.now() + wait + requestIntervalMs;
+    if (wait) await delay(wait, undefined, { signal: requestSignal });
+  };
+  let completed = results.length;
+  onProgress?.({ completed, total: candidates.length, ...stats });
   let next = 0, failed;
   const controller = new AbortController();
   const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -81,6 +93,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
       try {
         let response;
         for (let attempt = 0; attempt < 2; attempt++) {
+          await pace();
           requestSignal.throwIfAborted(); stats.requests++;
           try {
             response = await fetchImpl(`${endpoint}/api/v1/grep`, {
@@ -110,6 +123,8 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
           results.push({ ...batch[i].candidate, probability });
           if (useCache) await cache(batch[i].key, probability);
         }
+        completed += batch.length;
+        onProgress?.({ completed, total: candidates.length, ...stats });
       } catch (err) { failed ||= err; controller.abort(); }
     }
   }));
@@ -120,15 +135,21 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
 
 export async function search(query, paths, options = {}) {
   const start = performance.now();
-  const { limit = 10, threshold = 0.7, candidateLimit = 48, broad = false, dryRun = false, useCache = true } = options;
+  const { limit = 10, threshold = 0.7, candidateLimit = 48, broad = false, all = false, dryRun = false, useCache = true } = options;
+  if (all && broad) throw new Error('Choose all-mode or broad-mode, not both.');
   if (!query?.trim() || query.length > 2000) throw new Error('Query must contain 1–2000 characters.');
   const source = options.input !== undefined ? { candidates: chunks(options.input, '<stdin>', options.chunkLines || 1), skipped: 0, skippedFiles: [], files: 1, parsers: { lines: 1 } } : await collect(paths, options);
   if (source.candidates.length > (options.maxChunks || 20000)) throw new Error('Input exceeds discovery chunk limit. Narrow the input.');
-  const ranked = rank(query, source.candidates);
-  const selected = broad ? ranked : ranked.slice(0, candidateLimit);
-  if (selected.length > (options.maxEvaluations || 256)) throw new Error('Broad scan exceeds 256 snippets. Narrow the paths. No model calls were made.');
-  const stats = {};
-  const evaluated = dryRun || !selected.length ? [] : await score(query, selected, { ...options, useCache, stats });
+  // All-mode never uses lexical scores to exclude or prioritize source.
+  const ranked = all ? source.candidates : rank(query, source.candidates);
+  const selected = all || broad ? ranked : ranked.slice(0, candidateLimit);
+  const maxEvaluations = options.maxEvaluations ?? (all ? 20000 : 256);
+  if (!Number.isSafeInteger(maxEvaluations) || maxEvaluations < 1 || maxEvaluations > 20000) throw new Error('Evaluation budget must be between 1 and 20000.');
+  if (selected.length > maxEvaluations) throw new Error(`Scan needs ${selected.length} snippets but the evaluation budget is ${maxEvaluations}. Narrow the paths or raise --max-evaluations. No model calls were made.`);
+  const plannedRequests = makeBatches(selected).length;
+  const requestIntervalMs = options.requestIntervalMs ?? (all ? 3100 : 0);
+  const stats = { plannedRequests, minimumRequestSpanMs: Math.max(0, plannedRequests - 1) * requestIntervalMs };
+  const evaluated = dryRun || !selected.length ? [] : await score(query, selected, { ...options, useCache, stats, requestIntervalMs });
   // Collapse overlapping windows; never merge source text from different regions.
   const matches = [];
   for (const item of evaluated.filter(v => v.probability >= threshold)) {
@@ -136,8 +157,9 @@ export async function search(query, paths, options = {}) {
   }
   const warnings = [];
   if (!dryRun && evaluated.length && !matches.length) warnings.push(`No snippet reached threshold ${threshold}; this does not establish absence. Inspect a narrower scope or lower --threshold to review less certain candidates.`);
-  if (selected.length < ranked.length) warnings.push(`Shortlisted ${selected.length} of ${ranked.length} snippets using local lexical retrieval. Other snippets were not judged; use --broad or narrower paths when recall matters.`);
+  if (selected.length < ranked.length) warnings.push(`Shortlisted ${selected.length} of ${ranked.length} snippets using local lexical retrieval. Other snippets were not judged; use --all to judge every eligible snippet or narrow the paths.`);
+  if (all) warnings.push('All-mode covers eligible files in the supplied paths. Ignored and hidden files remain excluded; snippets are evaluated in separate batches, not one shared repository context.');
   if (source.skipped) warnings.push(`${source.skipped} files skipped; see coverage.skippedFiles.`);
   if (source.parsers['overlapping-lines']) warnings.push('Some files use overlapping line windows because no supported syntax parser was available.');
-  return { query, matches: matches.slice(0, limit).map(({ context, retrievalScore, ...match }) => match), coverage: { files: source.files, snippets: ranked.length, evaluated: dryRun ? 0 : selected.length, selected: selected.length, exhaustive: selected.length === ranked.length && !source.skipped, skippedFiles: source.skippedFiles, parsers: source.parsers, matchingSnippets: matches.length, returned: Math.min(matches.length, limit) }, stats: { ...stats, elapsedMs: Math.round(performance.now() - start) }, warnings, ...(dryRun ? { candidates: selected } : {}) };
+  return { query, matches: matches.slice(0, limit).map(({ context, retrievalScore, ...match }) => match), coverage: { mode: all ? 'all' : broad ? 'broad' : 'shortlist', selectedAll: selected.length === ranked.length, files: source.files, snippets: ranked.length, evaluated: dryRun ? 0 : selected.length, selected: selected.length, exhaustive: !dryRun && selected.length === ranked.length && !source.skipped, skippedFiles: source.skippedFiles, parsers: source.parsers, matchingSnippets: matches.length, returned: Math.min(matches.length, limit) }, stats: { ...stats, elapsedMs: Math.round(performance.now() - start) }, warnings, ...(dryRun ? { candidates: selected } : {}) };
 }

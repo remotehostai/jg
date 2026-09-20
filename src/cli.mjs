@@ -15,6 +15,8 @@ Usage: jg [options] "search intent" [paths...]
   --threshold N    Minimum match probability (default 0.7; not calibrated)
   --limit N        Maximum results (default 10)
   --candidates N   Locally ranked snippets to judge (default 48, max 256)
+  --all            Judge every eligible snippet in the paths (no shortlist)
+  --max-evaluations N  Fail before requests if scan exceeds budget (all: 20000; otherwise: 256)
   --broad          Judge all discovered snippets, up to 256; no shortlist
   --chunk-lines N  Use line windows instead of syntax-aware chunks
   --max-chunks N   Discovery ceiling (default 20000)
@@ -50,7 +52,7 @@ async function main() {
     return ({ login, logout, status })[command]();
   }
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    help: { type: 'boolean', short: 'h' }, json: { type: 'boolean' }, full: { type: 'boolean' }, files: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, broad: { type: 'boolean' }, 'no-cache': { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' }, json: { type: 'boolean' }, full: { type: 'boolean' }, files: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, broad: { type: 'boolean' }, all: { type: 'boolean' }, 'max-evaluations': { type: 'string' }, 'no-cache': { type: 'boolean' },
     glob: { type: 'string', short: 'g', multiple: true }, threshold: { type: 'string', default: '0.7' }, limit: { type: 'string', default: '10' }, candidates: { type: 'string', default: '48' }, 'chunk-lines': { type: 'string' }, 'max-chunks': { type: 'string', default: '20000' },
   } });
   if (values.help) { console.log(help); return; }
@@ -64,12 +66,14 @@ async function main() {
     if (!Number.isSafeInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer.`);
     return n;
   };
+  if (values.all && values.broad) throw new Error('Choose --all or --broad.');
+  if (values.all && values.candidates !== '48') throw new Error('--candidates does not apply to --all. Use --max-evaluations as a budget.');
   const candidateLimit = positive('candidates');
   if (candidateLimit > 256) throw new Error('--candidates must be at most 256.');
   const controller = new AbortController();
   process.once('SIGINT', () => controller.abort());
-  const options = { threshold, limit: positive('limit'), candidateLimit, chunkLines: values['chunk-lines'] ? positive('chunk-lines') : undefined, maxChunks: positive('max-chunks'), globs: values.glob, broad: values.broad, dryRun: values['dry-run'], useCache: !values['no-cache'], signal: controller.signal };
-  if (paths.includes('-') || (!paths.length && !process.stdin.isTTY)) {
+  const options = { threshold, limit: positive('limit'), candidateLimit, chunkLines: values['chunk-lines'] ? positive('chunk-lines') : undefined, maxChunks: positive('max-chunks'), globs: values.glob, broad: values.broad, all: values.all, maxEvaluations: values['max-evaluations'] ? positive('max-evaluations') : undefined, dryRun: values['dry-run'], useCache: !values['no-cache'], signal: controller.signal };
+  if (paths.includes('-') || (!values.all && !paths.length && !process.stdin.isTTY)) {
     if (paths.length > 1) throw new Error('Use stdin alone; do not mix - with paths.');
     let bytes = 0; const parts = [];
     for await (const part of process.stdin) { bytes += part.length; if (bytes > 1024 * 1024) throw new Error('stdin exceeds 1 MiB; narrow the input.'); parts.push(part); }
@@ -77,6 +81,7 @@ async function main() {
     if (data.includes(0)) throw new Error('stdin contains binary data.');
     options.input = new TextDecoder('utf-8', { fatal: true }).decode(data);
   }
+  if (values.all && !values['dry-run']) options.onProgress = ({ completed, total, requests, cacheHits }) => console.error(`jg: ${completed}/${total} snippets evaluated, ${cacheHits} cached, ${requests} requests`);
   const result = await search(query, paths.length ? paths : ['.'], options);
   if (values.json || values['dry-run']) console.log(JSON.stringify(result, null, 2));
   else if (values.files) for (const path of new Set(result.matches.map(m => m.path))) console.log(clean(path));

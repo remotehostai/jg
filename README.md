@@ -40,6 +40,42 @@ Selected source and bounded context are sent to the configured backend for real
 inference. Filesystem paths remain local. Use `--dry-run` to inspect payloads
 without network calls.
 
+## Search the whole repository
+
+From the repository root:
+
+```sh
+# Inspect everything that would be evaluated; no model calls or login required.
+jg --all --dry-run "where do we reject expired sessions?" .
+
+# Once hosted search is available to your account:
+jg --all "where do we reject expired sessions?" .
+jg --all --json --limit 30 "retry a failed network operation" .
+```
+
+`--all` evaluates every eligible snippet in the supplied paths, without a lexical
+shortlist. With no path it searches the current directory, including when invoked
+by an agent with non-interactive stdin. Run from the repo root or supply that root
+explicitly. To search stdin in this mode, supply `-` explicitly.
+
+The default budget is 20,000 snippet evaluations. Use `--max-evaluations N` to set
+a smaller budget; exceeding it fails before any model requests rather than silently
+omitting code. Discovery still enforces the file, byte and chunk limits below.
+Ignored files, hidden files, binary files and other reported skips are not evaluated.
+`--all` describes search coverage, not guaranteed semantic recall or one shared
+context window containing the entire repo. Jev evaluates separate snippet batches.
+
+Large scans can take minutes. Requests in all-mode start at least 3.1 seconds apart
+to accommodate the current preview backend's 20-request/minute limit. Other concurrent
+searches can still trigger rate limits; a failed request fails the scan. Ctrl-C
+cancels work, and cached evaluations can be reused on a subsequent run. Progress is
+written to stderr; JSON results remain on stdout. Dry-run stats include
+`plannedRequests` and `minimumRequestSpanMs` before accounting for cache hits or
+network latency. These are planning estimates, not a completion-time guarantee.
+
+All-mode still returns the top 10 matches by default. Use `--limit` to return more;
+`coverage.matchingSnippets` shows the count before the result limit.
+
 ## Search behavior
 
 - Discovery uses `rg --files`, preserving ignore rules and omitting hidden files.
@@ -56,8 +92,10 @@ without network calls.
 - Local BM25 ranks identifiers, symbols, paths and text, with deterministic vocabulary
   expansion. Up to 48 candidate snippets go to Jev by default (`--candidates`, max 256).
   This lexical shortlist can miss semantically relevant code with unrelated wording.
-- `--broad` judges every discovered snippet, up to 256. Larger scopes fail before model
-  calls; narrow paths. Discovery itself is bounded to 20,000 files/chunks and 32 MiB
+- `--all` judges every eligible snippet, with a default budget of 20,000.
+  `--broad` retains its smaller default budget of 256. `--max-evaluations` can set
+  either budget up to 20,000. Larger scopes fail before model calls; narrow paths
+  or raise the budget. Discovery itself is bounded to 20,000 files/chunks and 32 MiB
   of source; individual files are capped at 1 MiB.
 - Requests contain at most 16 snippets and 24,000 text/context characters, with up to
   three requests in flight. Transient network errors and HTTP 502/504 responses
@@ -83,8 +121,9 @@ jg exact -n --glob '*.ts' 'refreshToken' src/
 `--json` returns an object with `matches`, `coverage`, `stats`, and `warnings`.
 Each match contains `path`, `line`, `endLine`, `text`, `probability`, and optionally
 `symbol`. Coverage includes discovered/selected/evaluated snippets, skipped files,
-parser counts and whether all eligible snippets were evaluated. `exhaustive` refers
-to scope coverage, never guaranteed model recall. A no-match answer is not proof
+parser counts and whether all eligible snippets were evaluated. `selectedAll` reports whether all discovered snippets were selected. `exhaustive`
+is true only after all discovered snippets were evaluated and no files were skipped;
+it is false for a dry run and never guarantees model recall. A no-match answer is not proof
 that a behavior is absent. Dry runs additionally return the exact candidate text
 and context. Diagnostics go to stderr.
 
@@ -96,7 +135,7 @@ query named `login`, `status`, `mcp` or another subcommand, put `--` before it.
 ## Coding agents
 
 An MCP server is included: `jg mcp /absolute/workspace`. It exposes `search_code`
-with query, scoped paths, result limit, probability threshold, broad search,
+with query, scoped paths, result limit, probability threshold, broad search, all-snippet search (`all: true`), evaluation budget (`max_evaluations`),
 dry-run and cache-bypass options. It validates
 workspace boundaries and returns compact source excerpts plus coverage.
 After installing the client and signing in, register it with Codex:
