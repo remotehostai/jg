@@ -1,0 +1,39 @@
+{
+  "name": "@remotehost/jg",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Semantic code search for coding agents, powered by Jev",
+  "type": "module",
+  "bin": {
+    "jg": "src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "typescript": "5.9.3",
+    "zod": "4.6.5"
+  },
+  "homepage": "https://jevgrep.com",
+  "license": "UNLICENSED",
+  "files": [
+    "src/*.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/remotehostai/jg.git"
+  },
+  "bugs": {
+    "url": "https://github.com/remotehostai/jg/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "start": "node src/cli.mjs"
+  }
+}
