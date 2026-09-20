@@ -60,7 +60,7 @@ function makeBatches(entries) {
   return batches;
 }
 
-export async function score(query, candidates, { token, endpoint, fetchImpl = fetch, useCache = false, concurrency = 3, signal, stats = {}, requestIntervalMs = 0, onProgress } = {}) {
+export async function score(query, candidates, { token, endpoint, fetchImpl = fetch, useCache = false, concurrency = 3, signal, stats = {}, onProgress } = {}) {
   if (!query.trim() || query.length > 2000) throw new Error('Query must contain 1–2000 characters.');
   const saved = await credentials();
   token ??= saved.token;
@@ -76,12 +76,6 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
     else pending.push({ candidate, key });
   }
   const batches = makeBatches(pending);
-  let nextRequestAt = 0;
-  const pace = async () => {
-    const wait = Math.max(0, nextRequestAt - Date.now());
-    nextRequestAt = Date.now() + wait + requestIntervalMs;
-    if (wait) await delay(wait, undefined, { signal: requestSignal });
-  };
   let completed = results.length;
   onProgress?.({ completed, total: candidates.length, ...stats });
   let next = 0, failed;
@@ -93,7 +87,6 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
       try {
         let response;
         for (let attempt = 0; attempt < 2; attempt++) {
-          await pace();
           requestSignal.throwIfAborted(); stats.requests++;
           try {
             response = await fetchImpl(`${endpoint}/api/v1/grep`, {
@@ -109,7 +102,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
           await delay(300, undefined, { signal: requestSignal });
         }
         if (!response.ok) {
-          const hints = { 401: 'Run jg login again.', 403: 'Your account needs jevgrep preview access.', 404: 'The search endpoint has not been deployed.', 429: 'Search rate limit reached; wait a minute or narrow the scope.', 503: 'Search preview is not enabled on this server.' };
+          const hints = { 401: 'Run jg login again.', 403: 'Your account needs jevgrep preview access.', 404: 'The search endpoint has not been deployed.', 429: 'AI Gateway rate limit reached. Retry later.', 503: 'Search preview is not enabled on this server.' };
           throw new Error(`Search failed (HTTP ${response.status}). ${hints[response.status] || 'Try again later.'}`);
         }
         const body = await response.json();
@@ -147,9 +140,8 @@ export async function search(query, paths, options = {}) {
   if (!Number.isSafeInteger(maxEvaluations) || maxEvaluations < 1 || maxEvaluations > 20000) throw new Error('Evaluation budget must be between 1 and 20000.');
   if (selected.length > maxEvaluations) throw new Error(`Scan needs ${selected.length} snippets but the evaluation budget is ${maxEvaluations}. Narrow the paths or raise --max-evaluations. No model calls were made.`);
   const plannedRequests = makeBatches(selected).length;
-  const requestIntervalMs = options.requestIntervalMs ?? (all ? 3100 : 0);
-  const stats = { plannedRequests, minimumRequestSpanMs: Math.max(0, plannedRequests - 1) * requestIntervalMs };
-  const evaluated = dryRun || !selected.length ? [] : await score(query, selected, { ...options, useCache, stats, requestIntervalMs });
+  const stats = { plannedRequests, minimumRequestSpanMs: 0 };
+  const evaluated = dryRun || !selected.length ? [] : await score(query, selected, { ...options, useCache, stats });
   // Collapse overlapping windows; never merge source text from different regions.
   const matches = [];
   for (const item of evaluated.filter(v => v.probability >= threshold)) {

@@ -65,13 +65,12 @@ Ignored files, hidden files, binary files and other reported skips are not evalu
 `--all` describes search coverage, not guaranteed semantic recall or one shared
 context window containing the entire repo. Jev evaluates separate snippet batches.
 
-Large scans can take minutes. Requests in all-mode start at least 3.1 seconds apart
-to accommodate the current preview backend's 20-request/minute limit. Other concurrent
-searches can still trigger rate limits; a failed request fails the scan. Ctrl-C
-cancels work, and cached evaluations can be reused on a subsequent run. Progress is
-written to stderr; JSON results remain on stdout. Dry-run stats include
-`plannedRequests` and `minimumRequestSpanMs` before accounting for cache hits or
-network latency. These are planning estimates, not a completion-time guarantee.
+Scans use up to three concurrent requests, with no artificial per-minute quota or
+fixed delay between batches. Gateway rate-limit responses fail the scan explicitly
+rather than returning partial results. Ctrl-C cancels work; cached evaluations can
+be reused on a subsequent run. Latency depends on scope and Gateway response time.
+Dry-run plans include the estimated request count. `minimumRequestSpanMs` remains
+zero for schema compatibility; it is not an estimate of actual completion time.
 
 All-mode returns the top five matches by default. Use `--limit` (up to 100) to
 return more; `omittedMatches` reports matches excluded by result or output limits.

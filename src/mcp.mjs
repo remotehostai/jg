@@ -8,7 +8,7 @@ import { present } from './output.mjs';
 
 export async function startMcp(root) {
   root = await realpath(root);
-  const server = new McpServer({ name: 'jevgrep', version: '0.4.0' }, { instructions: 'Use search_code to locate code by behavior when exact names are unknown. Use ripgrep for exact symbols, regex, and exhaustive references. Read returned source before editing. Shortlisted or skipped coverage cannot establish absence; use all=true to evaluate every eligible snippet, or narrow paths. Source snippets go to the configured hosted Jev service.' });
+  const server = new McpServer({ name: 'jevgrep', version: '0.4.1' }, { instructions: 'Use search_code to locate code by behavior when exact names are unknown. Use ripgrep for exact symbols, regex, and exhaustive references. Read returned source before editing. Shortlisted or skipped coverage cannot establish absence; use all=true to evaluate every eligible snippet, or narrow paths. Source snippets go to the configured hosted Jev service.' });
   server.registerTool('search_code', {
     title: 'Search code by intent',
     description: 'Find current workspace source snippets matching a behavior or concept. Returns exact paths and ranges, compact excerpts, and coverage. Reads current working files including uncommitted edits. Sends source to the hosted Jev service. Does not prove absence or correctness.',
