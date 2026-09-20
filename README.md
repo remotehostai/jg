@@ -96,7 +96,10 @@ return more; `omittedMatches` reports matches excluded by result or output limit
   or raise the budget. Discovery itself is bounded to 20,000 files/chunks and 32 MiB
   of source; individual files are capped at 1 MiB.
 - Requests contain at most 16 snippets and 24,000 text/context characters, with up to
-  three requests in flight. Transient network errors and HTTP 502/504 responses
+  three API requests in flight. The backend evaluates each snippet in a separate Jev
+  state (up to four concurrent model calls per batch), so neighboring snippets do
+  not supply evidence for one another. Dry-run request counts are API batches;
+  an uncached scan makes one model call per snippet. Transient network errors and HTTP 502/504 responses
   get one bounded retry; authentication and rate-limit failures do not. Any batch failure fails the whole result instead of
   reporting a partial search as success. Ctrl-C cancels in-flight requests.
 - Probabilities are cached for ten minutes by query, exact text/context, endpoint,
@@ -104,7 +107,7 @@ return more; `omittedMatches` reports matches excluded by result or output limit
   probabilities and expiration, never source text, queries or tokens. Content edits
   invalidate entries. `--no-cache` bypasses it. Model aliases may change within a TTL.
 - Matches are probability-ranked; overlapping windows are deduplicated. Defaults:
-  threshold 0.7 and limit 5. Thresholds are not calibrated on a representative corpus.
+  threshold 0.5 and limit 5. Thresholds are not calibrated on a representative corpus.
 
 ## Output and exact search
 
@@ -152,6 +155,10 @@ and parser details are hidden unless `--debug` is supplied.
   "omittedMatches": 0
 }
 ```
+
+Terminal output uses aligned line-number gutters and exact source text. Interactive
+progress updates one stderr line; redirected output contains no terminal escapes.
+JSON and MCP retain their versioned structured format.
 
 `--max-output` bounds each result representation to 8,000 UTF-8 bytes by default,
 including metadata and the CLI trailing newline (range: 1,024–64,000).

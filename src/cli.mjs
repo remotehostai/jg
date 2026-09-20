@@ -13,7 +13,7 @@ Usage: jg [options] "search intent" [paths...]
        jg mcp [workspace-root]
        jg login | logout | status
 
-  --threshold N    Minimum match probability (default 0.7; not calibrated)
+  --threshold N    Minimum match probability (default 0.5; not calibrated)
   --limit N        Maximum results (default 5, max 100)
   --candidates N   Locally ranked snippets to judge (default 48, max 256)
   --all            Judge every eligible snippet in the paths (no shortlist)
@@ -56,7 +56,7 @@ async function main() {
   }
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     help: { type: 'boolean', short: 'h' }, json: { type: 'boolean' }, full: { type: 'boolean' }, debug: { type: 'boolean' }, 'dump-candidates': { type: 'boolean' }, 'max-output': { type: 'string', default: '8000' }, files: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, broad: { type: 'boolean' }, all: { type: 'boolean' }, 'max-evaluations': { type: 'string' }, 'no-cache': { type: 'boolean' },
-    glob: { type: 'string', short: 'g', multiple: true }, threshold: { type: 'string', default: '0.7' }, limit: { type: 'string', default: '5' }, candidates: { type: 'string', default: '48' }, 'chunk-lines': { type: 'string' }, 'max-chunks': { type: 'string', default: '20000' },
+    glob: { type: 'string', short: 'g', multiple: true }, threshold: { type: 'string', default: '0.5' }, limit: { type: 'string', default: '5' }, candidates: { type: 'string', default: '48' }, 'chunk-lines': { type: 'string' }, 'max-chunks': { type: 'string', default: '20000' },
   } });
   if (values.help) { console.log(help); return; }
   if (values['dump-candidates'] && !values['dry-run']) throw new Error('--dump-candidates requires --dry-run.');
@@ -89,8 +89,17 @@ async function main() {
     if (data.includes(0)) throw new Error('stdin contains binary data.');
     options.input = new TextDecoder('utf-8', { fatal: true }).decode(data);
   }
-  if (values.all && !values['dry-run'] && (process.stderr.isTTY || values.debug)) options.onProgress = ({ completed, total }) => console.error(`jg: ${completed}/${total} snippets evaluated`);
-  const result = await search(query, paths.length ? paths : ['.'], options);
+  let progressVisible = false;
+  if (values.all && !values['dry-run'] && (process.stderr.isTTY || values.debug)) options.onProgress = ({ completed, total }) => {
+    const message = `jg: ${completed}/${total} snippets evaluated`;
+    if (process.stderr.isTTY) {
+      process.stderr.write(`\r\x1b[2K${message}`);
+      progressVisible = true;
+    } else if (completed === 0 || completed === total) console.error(message);
+  };
+  let result;
+  try { result = await search(query, paths.length ? paths : ['.'], options); }
+  finally { if (progressVisible) process.stderr.write('\r\x1b[2K'); }
   const output = present(result, { maxOutput, full: values.full, debug: values.debug, dryRun: values['dry-run'], dumpCandidates: values['dump-candidates'] });
   if (values.json) console.log(JSON.stringify(output));
   else if (values.files) {

@@ -70,7 +70,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
   const results = [], pending = [];
   for (const candidate of candidates) {
     signal?.throwIfAborted();
-    const key = digest(['jevgrep-relevance-v4', endpoint, digest(token), query, candidate.text, candidate.context || '']);
+    const key = digest(['jevgrep-relevance-v5', endpoint, digest(token), query, candidate.text, candidate.context || '']);
     const value = useCache ? await cached(key) : undefined;
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1) { results.push({ ...candidate, probability: value }); stats.cacheHits++; }
     else pending.push({ candidate, key });
@@ -128,7 +128,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
 
 export async function search(query, paths, options = {}) {
   const start = performance.now();
-  const { limit = 5, threshold = 0.7, candidateLimit = 48, broad = false, all = false, dryRun = false, useCache = true } = options;
+  const { limit = 5, threshold = 0.5, candidateLimit = 48, broad = false, all = false, dryRun = false, useCache = true } = options;
   if (all && broad) throw new Error('Choose all-mode or broad-mode, not both.');
   if (!query?.trim() || query.length > 2000) throw new Error('Query must contain 1–2000 characters.');
   const source = options.input !== undefined ? { candidates: chunks(options.input, '<stdin>', options.chunkLines || 1), skipped: 0, skippedFiles: [], files: 1, parsers: { lines: 1 } } : await collect(paths, options);

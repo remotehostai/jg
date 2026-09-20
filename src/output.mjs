@@ -28,13 +28,14 @@ export function renderText(result) {
   const lines = [];
   for (const match of result.matches) {
     lines.push(`${match.path}:${match.startLine}–${match.endLine}${match.symbol ? `  ${match.symbol}` : ''}${match.probability !== undefined ? ` (${match.probability.toFixed(3)})` : ''}`);
-    lines.push(...match.text.split('\n').map((line, i) => `${match.startLine + i}: ${line}`));
+    const width = String(match.endLine).length;
+    lines.push(...match.text.split('\n').map((line, i) => `  ${String(match.startLine + i).padStart(width)} │ ${line}`));
     if (match.excerptTruncated) lines.push(`… excerpt shortened; source ends at line ${match.sourceEndLine}`);
     lines.push('');
   }
   const c = result.coverage;
   if (result.dryRun) {
-    lines.push(`preview: ${c.files} files · ${c.selected}/${c.eligible} snippets selected · ${result.plan.requests} estimated requests`);
+    lines.push(`preview: ${c.files} files · ${c.selected}/${c.eligible} snippets selected · ${result.plan.requests} estimated API batches`);
     lines.push('No model calls made. Ignored and hidden files are excluded.');
   } else if (!result.matches.length) lines.push(result.omittedMatches ? 'Matches found; none fit the output budget.' : 'No matches. This does not establish absence.');
   lines.push(`coverage: ${c.evaluated}/${c.eligible} snippets evaluated · ${c.mode}${c.skipped ? ` · ${c.skipped} files skipped` : ''}`);
