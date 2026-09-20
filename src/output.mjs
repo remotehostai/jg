@@ -1,3 +1,4 @@
+import { rank } from './retrieve.mjs';
 // Shared presentation contract for CLI JSON, terminal output and MCP.
 export const DEFAULT_OUTPUT_BYTES = 8000;
 export const MAX_OUTPUT_BYTES = 64000;
@@ -8,9 +9,17 @@ const prefix = (text, count) => {
   if (end && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
   return text.slice(0, end);
 };
-function excerpt(item, full, debug) {
-  const text = full ? item.text : prefix(item.text.split('\n').slice(0, 12).join('\n'), 1200);
-  return { path: item.path, startLine: item.line, endLine: item.line + text.split('\n').length - 1,
+function excerpt(item, full, debug, query) {
+  const lines = item.text.split('\n');
+  let offset = 0;
+  if (!full && query && lines.length > 12) {
+    const windows = Array.from({ length: lines.length }, (_, i) => ({ path: '', line: i, text: prefix(lines.slice(i, i + 12).join('\n'), 1200) }));
+    // Localization only: lexical scores never change Jev's match decision.
+    const best = rank(query, windows)[0];
+    if (best.retrievalScore > 0) offset = best.line;
+  }
+  const text = full ? item.text : prefix(lines.slice(offset, offset + 12).join('\n'), 1200);
+  return { path: item.path, startLine: item.line + offset, endLine: item.line + offset + text.split('\n').length - 1,
     ...(item.symbol ? { symbol: item.symbol } : {}), text,
     ...(text !== item.text ? { excerptTruncated: true, sourceEndLine: item.endLine } : {}),
     ...(debug && item.probability !== undefined ? { probability: item.probability } : {}) };
@@ -29,7 +38,7 @@ export function renderText(result) {
     lines.push('No model calls made. Ignored and hidden files are excluded.');
   } else if (!result.matches.length) lines.push(result.omittedMatches ? 'Matches found; none fit the output budget.' : 'No matches. This does not establish absence.');
   lines.push(`coverage: ${c.evaluated}/${c.eligible} snippets evaluated · ${c.mode}${c.skipped ? ` · ${c.skipped} files skipped` : ''}`);
-  if (result.truncated) lines.push(`output shortened${result.omittedMatches ? ` · ${result.omittedMatches} matches omitted` : ''}; raise --limit/--max-output or read the source`);
+  if (result.truncated) lines.push(`output shortened${result.omittedMatches ? ` · ${result.omittedMatches} matches omitted` : ''}; use --full, raise --limit/--max-output, or read the source`);
   if (result.candidates) lines.push(`candidates: ${JSON.stringify(result.candidates)}`);
   if (result.diagnostics) lines.push(`debug: ${JSON.stringify(result.diagnostics)}`);
   return clean(lines.join('\n'));
@@ -38,7 +47,7 @@ export function present(raw, { maxOutput = DEFAULT_OUTPUT_BYTES, full = false, d
   if (!Number.isSafeInteger(maxOutput) || maxOutput < 1024 || maxOutput > MAX_OUTPUT_BYTES) throw new Error('--max-output must be an integer between 1024 and 64000 bytes.');
   if (dumpCandidates && !dryRun) throw new Error('--dump-candidates requires --dry-run.');
   const c = raw.coverage;
-  const result = { schemaVersion: 1, matches: raw.matches.map(m => excerpt(m, full, debug)), coverage: {
+  const result = { schemaVersion: 1, matches: raw.matches.map(m => excerpt(m, full, debug, raw.query)), coverage: {
     mode: c.mode, files: c.files, evaluated: c.evaluated, eligible: c.snippets, selected: c.selected,
     skipped: c.skippedFiles.length, selectionComplete: c.selectedAll, evaluationComplete: c.exhaustive,
   }, truncated: false, omittedMatches: Math.max(0, c.matchingSnippets - raw.matches.length) };

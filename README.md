@@ -121,8 +121,9 @@ with non-interactive stdin. Supply paths to scope the search. Reading stdin alwa
 requires an explicit `-` (for example, `cat file.log | jg "expired" -`).
 
 Default output contains up to five matches, each with its path, exact excerpt
-line range, optional symbol and source text. Excerpts start with at most 12 lines
-and 1,200 characters. One coverage summary follows; probabilities, request timings
+line range, optional symbol and source text. Excerpts contain at most 12 lines and 1,200 characters. For longer snippets,
+a local query-based window selects the displayed lines; this only locates the
+excerpt and does not change Jev’s relevance decision. One coverage summary follows; probabilities, request timings
 and parser details are hidden unless `--debug` is supplied.
 
 `--json` and MCP share a versioned result schema:

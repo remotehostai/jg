@@ -70,7 +70,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
   const results = [], pending = [];
   for (const candidate of candidates) {
     signal?.throwIfAborted();
-    const key = digest(['jevgrep-relevance-v3', endpoint, digest(token), query, candidate.text, candidate.context || '']);
+    const key = digest(['jevgrep-relevance-v4', endpoint, digest(token), query, candidate.text, candidate.context || '']);
     const value = useCache ? await cached(key) : undefined;
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1) { results.push({ ...candidate, probability: value }); stats.cacheHits++; }
     else pending.push({ candidate, key });
