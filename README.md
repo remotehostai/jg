@@ -106,8 +106,17 @@ return more; `omittedMatches` reports matches excluded by result or output limit
   account-token hash and client prompt version. Cache files contain only hashes,
   probabilities and expiration, never source text, queries or tokens. Content edits
   invalidate entries. `--no-cache` bypasses it. Model aliases may change within a TTL.
-- Matches are probability-ranked; overlapping windows are deduplicated. Defaults:
-  threshold 0.5 and limit 5. Thresholds are not calibrated on a representative corpus.
+- Matches are ranked by score; overlapping windows are deduplicated. Defaults:
+  threshold 0.5 and limit 5. A score is the product of two independent judgments,
+  that the snippet acts on the requested entity and that it performs the requested
+  operation. It orders results; it is not a calibrated probability, and the default
+  threshold is chosen from a small labelled corpus, not a representative one.
+- JS/TS and Python declarations longer than 24 lines are split into the blocks
+  inside them, so a router or a long loop is judged and quoted one behaviour at a
+  time. The split covers every line of the declaration, so coverage is unchanged.
+- In a terminal, source lines longer than the window are clipped to one row and
+  marked with `…`, keeping line numbers aligned. Redirected and `--json` output is
+  never clipped, so byte budgets do not depend on the terminal.
 
 ## Output and exact search
 
@@ -125,8 +134,12 @@ requires an explicit `-` (for example, `cat file.log | jg "expired" -`).
 
 Default output contains up to five matches, each with its path, exact excerpt
 line range, optional symbol and source text. Excerpts contain at most 12 lines and 1,200 characters. For longer snippets,
-a local query-based window selects the displayed lines; this only locates the
-excerpt and does not change Jev’s relevance decision. One coverage summary follows; probabilities, request timings
+the excerpt is taken from the narrower block Jev judged relevant when there is
+one, and a local query-based window picks the lines inside it otherwise; both
+only locate the excerpt and neither changes Jev’s relevance decision. A match
+whose path is a test carries `kind: "test"`. Tests often are the clearest
+evidence of a behaviour, so they are ranked on merit and labelled rather than
+demoted. One coverage summary follows; scores, request timings
 and parser details are hidden unless `--debug` is supplied.
 
 `--json` and MCP share a versioned result schema:
@@ -140,6 +153,12 @@ and parser details are hidden unless `--debug` is supplied.
     "endLine": 44,
     "symbol": "validateSession",
     "text": "if (session.expiresAt <= Date.now()) {\n  throw new Error(\"expired\");\n}"
+  }, {
+    "path": "test/auth.test.ts",
+    "startLine": 12,
+    "endLine": 13,
+    "kind": "test",
+    "text": "const expired = token({ expiresAt: past });\nassert.equal(await call(expired), 401);"
   }],
   "coverage": {
     "mode": "shortlist",
@@ -191,7 +210,9 @@ JSON stdout stays machine-readable. Exit codes: 0 matches/preview, 1 no matches,
 2 error, 130 interrupted. `jg exact` preserves ripgrep output and exit status.
 To search a query named `login`, `status`, `mcp` or another subcommand, put `--`
 before it. `0.4.0` changes the earlier preview JSON contract; consumers should
-use `schemaVersion: 1`, `startLine`, and the coverage fields above.
+use `schemaVersion: 1`, `startLine`, and the coverage fields above. `kind` is
+optional and only ever `"test"`; consumers that ignore unknown fields are
+unaffected.
 
 ## Coding agents
 
@@ -223,6 +244,15 @@ code matches your terminal, then approve. Credentials are stored at
 `~/.jevgrep/config.json` with mode 0600. Each CLI connection has a separate token
 that expires after 90 days. `jg logout` revokes the current token and removes the
 local login; you can also revoke connections at https://jevgrep.com/account.
+
+Version 0.6.0 changes result scoring and chunking, so results differ from 0.5.x.
+A score is now the product of the two judgments rather than the lower of them,
+declarations longer than 24 lines are judged as the blocks inside them, and
+matches under a test path carry `kind: "test"`. The default threshold stays 0.5,
+which a three-run evaluation on the bundled corpus put between the highest
+graded hard negative (0.46) and the lowest correct answer (0.55). Scores are on
+a different scale from 0.5.x, so a pinned custom `--threshold` should be
+re-checked; cached scores from earlier versions are not reused.
 
 Version 0.5.0 moves authentication and search to Jevgrep's independent backend.
 Old Jevgate logins are not migrated; run `jg login` again. Source and query text

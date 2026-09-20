@@ -34,16 +34,16 @@ export async function sourceChunks(text, path, { chunkLines } = {}) {
       context = [header, ...source.statements.filter(n => ts.isImportDeclaration(n) || (ts.isVariableStatement(n) && n.getText(source).length < 300)).map(n => n.getText(source))].join('\n').slice(0, 2000);
       for (const node of source.statements) {
         const name = node.name?.getText(source) || (ts.isVariableStatement(node) ? node.declarationList.declarations.map(d => d.name.getText(source)).join(', ') : undefined);
-        const add = (n, symbol) => {
+        const add = (n, symbol, declaration) => {
           const pos = n.getFullStart();
           const line = source.getLineAndCharacterOfPosition(pos).line;
           const prefix = text.slice(source.getPositionOfLineAndCharacter(line, 0), pos);
-          ranges.push({ start: line + 1 + (prefix.trim() ? 1 : 0), end: source.getLineAndCharacterOfPosition(n.end).line + 1, symbol });
+          ranges.push({ start: line + 1 + (prefix.trim() ? 1 : 0), end: source.getLineAndCharacterOfPosition(n.end).line + 1, symbol, declaration });
         };
         if (ts.isClassDeclaration(node) && node.members.length) {
           add({ getFullStart: () => node.getFullStart(), end: node.members[0].getFullStart() }, name);
-          for (const member of node.members) add(member, `${name || 'class'}.${member.name?.getText(source) || 'constructor'}`);
-        } else add(node, name);
+          for (const member of node.members) add(member, `${name || 'class'}.${member.name?.getText(source) || 'constructor'}`, member);
+        } else add(node, name, node);
       }
       // Object methods often live inside large factory functions. Add focused
       // targets without removing the enclosing chunks or their source coverage.
@@ -58,25 +58,118 @@ export async function sourceChunks(text, path, { chunkLines } = {}) {
         ts.forEachChild(node, child => visit(child, names));
       };
       visit(source);
+      // A long function is several behaviours in one range: a request router
+      // holds a guard per route, a loop body holds its own error handling.
+      // Judged whole, such a range scores vaguely for everything it touches and
+      // quoting it cannot show which branch answered. Split it into the blocks
+      // inside it instead. The split covers every original line, so the
+      // declaration is replaced rather than sampled and coverage is unchanged.
+      const lineOf = position => source.getLineAndCharacterOfPosition(position).line + 1;
+      const bodyBlock = node => {
+        if (ts.isBlock(node)) return node;
+        if (node.body && ts.isBlock(node.body)) return node.body;
+        if (ts.isVariableStatement(node)) for (const d of node.declarationList.declarations) { const block = d.initializer && bodyBlock(d.initializer); if (block) return block; }
+        if (ts.isExpressionStatement(node)) return bodyBlock(node.expression);
+        if (ts.isAwaitExpression(node) || ts.isParenthesizedExpression(node) || ts.isReturnStatement(node)) return node.expression && bodyBlock(node.expression);
+        if (ts.isPropertyAccessExpression(node)) return bodyBlock(node.expression);
+        if (ts.isCallExpression(node)) for (const argument of node.arguments) { const block = bodyBlock(argument); if (block) return block; }
+        if (ts.isIfStatement(node) && node.thenStatement) return bodyBlock(node.thenStatement);
+        if (ts.isTryStatement(node)) return node.tryBlock;
+        if ((ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node) || ts.isWhileStatement(node)) && node.statement) return bodyBlock(node.statement);
+        return undefined;
+      };
+      const partition = (node, start, end, symbol, depth = 0) => {
+        const block = node && bodyBlock(node);
+        const statements = block?.statements.filter(s => s.getStart(source) < s.end) || [];
+        if (end - start < 24 || !statements.length) return undefined;
+        // A body that only wraps one statement (a loop, a Promise.all worker)
+        // carries no split of its own; look inside it for one.
+        if (statements.length === 1) return depth < 3 ? partition(statements[0], start, end, symbol, depth + 1) : undefined;
+        const parts = [];
+        let cursor = start, group = [];
+        const flush = last => {
+          if (!group.length) return;
+          const stop = last ? end : Math.min(end, lineOf(group.at(-1).end));
+          if (stop >= cursor) {
+            const inner = group.length === 1 && depth < 3 ? partition(group[0], cursor, stop, symbol, depth + 1) : undefined;
+            if (inner) parts.push(...inner); else parts.push({ start: cursor, end: stop, symbol });
+            cursor = stop + 1;
+          }
+          group = [];
+        };
+        for (const statement of statements) {
+          const span = lineOf(statement.end) - lineOf(statement.getStart(source)) + 1;
+          if (group.length && (span >= 6 || lineOf(statement.end) - cursor + 1 > 20)) flush(false);
+          group.push(statement);
+          if (span >= 6 && statement !== statements.at(-1)) flush(false);
+        }
+        flush(true);
+        return parts.length > 1 ? parts : undefined;
+      };
+      ranges = ranges.flatMap(range => partition(range.declaration, range.start, range.end, range.symbol) || [range]);
       parser = 'typescript';
     }
   } else if (ext === '.py') {
+    // Same split as the TypeScript parser: a long body becomes the blocks
+    // inside it, covering every line of the original range.
     const script = `import ast,json,sys
 s=sys.stdin.read()
 t=ast.parse(s)
 r=[]
+def begin(n):return min([n.lineno]+[d.lineno for d in getattr(n,'decorator_list',[])])
+def parts(node,start,end,symbol,depth=0):
+ body=getattr(node,'body',None)
+ if not isinstance(body,list) or end-start<24:return None
+ stmts=[x for x in body if hasattr(x,'lineno') and hasattr(x,'end_lineno')]
+ if not stmts:return None
+ if len(stmts)==1:return parts(stmts[0],start,end,symbol,depth+1) if depth<3 else None
+ out=[];cursor=start;group=[]
+ def flush(last):
+  nonlocal cursor,group
+  if not group:return
+  stop=end if last else min(end,group[-1].end_lineno)
+  if stop>=cursor:
+   inner=parts(group[0],cursor,stop,symbol,depth+1) if len(group)==1 and depth<3 else None
+   out.extend(inner) if inner else out.append(dict(start=cursor,end=stop,symbol=symbol))
+   cursor=stop+1
+  group.clear()
+ for x in stmts:
+  span=x.end_lineno-begin(x)+1
+  if group and (span>=6 or x.end_lineno-cursor+1>20):flush(False)
+  group.append(x)
+  if span>=6 and x is not stmts[-1]:flush(False)
+ flush(True)
+ return out if len(out)>1 else None
+def emit(node,start,end,symbol):
+ p=parts(node,start,end,symbol)
+ r.extend(p) if p else r.append(dict(start=start,end=end,symbol=symbol))
 for n in t.body:
- start=min([n.lineno]+[d.lineno for d in getattr(n,'decorator_list',[])])
+ start=begin(n)
  if isinstance(n,ast.ClassDef):
   r.append(dict(start=start,end=n.body[0].lineno-1,symbol=n.name))
   for m in n.body:
-   r.append(dict(start=min([m.lineno]+[d.lineno for d in getattr(m,'decorator_list',[])]),end=m.end_lineno,symbol=n.name+'.'+getattr(m,'name','body')))
- else:r.append(dict(start=start,end=n.end_lineno,symbol=getattr(n,'name',None)))
+   emit(m,begin(m),m.end_lineno,n.name+'.'+getattr(m,'name','body'))
+ else:emit(n,start,n.end_lineno,getattr(n,'name',None))
 print(json.dumps(r))`;
     const result = spawnSync('python3', ['-I', '-c', script], { input: text, encoding: 'utf8', timeout: 3000, maxBuffer: 2 * 1024 * 1024 });
     if (result.status === 0) { ranges = JSON.parse(result.stdout); parser = 'python'; context = header; }
   }
   if (!ranges?.length) return { chunks: chunks(text, path, 60, 10), parser: 'overlapping-lines' };
+  // Imports and one-line declarations are rarely an answer on their own and
+  // each one costs a judgment, so gather runs of short neighbours into one
+  // target. Only adjacent ranges merge, so line coverage stays exact. Names are
+  // kept the way a multiple declarator already reads ("runtime, maxDuration"),
+  // and class members stay separate so one is never folded into its header.
+  const mergeable = range => range.end - range.start <= 1 && !range.symbol?.includes('.');
+  const merged = [];
+  for (const range of ranges) {
+    const last = merged.at(-1);
+    if (last && mergeable(last) && mergeable(range) && range.start <= last.end + 1 && range.end - last.start < 12 && `${last.symbol} ${range.symbol}`.length < 60) {
+      last.end = range.end;
+      last.symbol = [...new Set([last.symbol, range.symbol].filter(Boolean))].join(', ') || undefined;
+    } else merged.push({ ...range });
+  }
+  ranges = merged;
   const lines = text.split(/\r?\n/);
   if (lines.at(-1) === '') lines.pop();
   const result = [];

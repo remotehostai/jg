@@ -5,17 +5,21 @@ import { realpath } from 'node:fs/promises';
 import { relative, resolve, isAbsolute } from 'node:path';
 import { search } from './search.mjs';
 import { present } from './output.mjs';
+import { createRequire } from 'node:module';
+
+// Report the shipped package version rather than a copy that goes stale.
+const { version } = createRequire(import.meta.url)('../package.json');
 
 export async function startMcp(root) {
   root = await realpath(root);
-  const server = new McpServer({ name: 'jevgrep', version: '0.4.1' }, { instructions: 'Use search_code to locate code by behavior when exact names are unknown. Use ripgrep for exact symbols, regex, and exhaustive references. Read returned source before editing. Shortlisted or skipped coverage cannot establish absence; use all=true to evaluate every eligible snippet, or narrow paths. Source snippets go to the configured hosted Jev service.' });
+  const server = new McpServer({ name: 'jevgrep', version }, { instructions: 'Use search_code to locate code by behavior when exact names are unknown. Use ripgrep for exact symbols, regex, and exhaustive references. Read returned source before editing. Shortlisted or skipped coverage cannot establish absence; use all=true to evaluate every eligible snippet, or narrow paths. Source snippets go to the configured hosted Jev service.' });
   server.registerTool('search_code', {
     title: 'Search code by intent',
-    description: 'Find current workspace source snippets matching a behavior or concept. Returns exact paths and ranges, compact excerpts, and coverage. Reads current working files including uncommitted edits. Sends source to the hosted Jev service. Does not prove absence or correctness.',
+    description: 'Find current workspace source snippets matching a behavior or concept. Returns exact paths and ranges, compact excerpts, and coverage. A match whose path is a test carries kind:"test"; it is ranked on its own evidence, not demoted. Reads current working files including uncommitted edits. Sends source to the hosted Jev service. Does not prove absence or correctness.',
     inputSchema: { query: z.string().min(1).max(2000), paths: z.array(z.string()).min(1).max(20).default(['.']), limit: z.number().int().min(1).max(100).default(5), threshold: z.number().min(0).max(1).default(0.5), broad: z.boolean().default(false), all: z.boolean().default(false).describe('Evaluate every eligible snippet in the scoped paths without lexical shortlisting; may take minutes.'), max_evaluations: z.number().int().min(1).max(20000).optional(), dry_run: z.boolean().default(false), no_cache: z.boolean().default(false), max_output: z.number().int().min(1024).max(64000).default(8000), debug: z.boolean().default(false), full: z.boolean().default(false), dump_candidates: z.boolean().default(false) },
     outputSchema: {
       schemaVersion: z.literal(1),
-      matches: z.array(z.object({ path: z.string(), startLine: z.number().int(), endLine: z.number().int(), symbol: z.string().optional(), text: z.string(), excerptTruncated: z.boolean().optional(), sourceEndLine: z.number().int().optional(), probability: z.number().optional() })),
+      matches: z.array(z.object({ path: z.string(), startLine: z.number().int(), endLine: z.number().int(), symbol: z.string().optional(), kind: z.literal('test').optional(), text: z.string(), excerptTruncated: z.boolean().optional(), sourceEndLine: z.number().int().optional(), probability: z.number().optional() })),
       coverage: z.object({ mode: z.enum(['all', 'broad', 'shortlist']), files: z.number(), evaluated: z.number(), eligible: z.number(), selected: z.number(), skipped: z.number(), selectionComplete: z.boolean(), evaluationComplete: z.boolean() }),
       truncated: z.boolean(), omittedMatches: z.number(), dryRun: z.boolean().optional(),
       plan: z.object({ requests: z.number(), minimumRequestSpanMs: z.number(), excluded: z.array(z.string()) }).optional(),

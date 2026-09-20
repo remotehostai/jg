@@ -9,27 +9,56 @@ const prefix = (text, count) => {
   if (end && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
   return text.slice(0, end);
 };
+// A test that exercises the requested behaviour is real evidence and is ranked
+// on its own merit, but an agent asking where something is implemented should
+// not have to guess which result is the implementation. Label the result from
+// its path only; nothing here changes which snippets matched or their order.
+const testPath = /(^|\/)(tests?|specs?|__tests__|testdata|fixtures?)\/|[._-](test|spec)\.[a-z]+$|(^|\/)(test|spec)_[^/]*$|(^|[/._-])smoke\.[a-z]+$/i;
+export const evidenceKind = path => (testPath.test(String(path)) ? 'test' : undefined);
 function excerpt(item, full, debug, query) {
   const lines = item.text.split('\n');
   let offset = 0;
-  if (!full && query && lines.length > 12) {
-    const windows = Array.from({ length: lines.length }, (_, i) => ({ path: '', line: i, text: prefix(lines.slice(i, i + 12).join('\n'), 1200) }));
-    // Localization only: lexical scores never change Jev's match decision.
-    const best = rank(query, windows)[0];
-    if (best.retrievalScore > 0) offset = best.line;
+  if (!full && lines.length > 12) {
+    // Prefer the narrower block the model itself judged relevant; search only
+    // inside it. Lexical scores localize within that block and never change
+    // which snippets matched.
+    let first = 0, last = lines.length - 1;
+    if (item.evidence) {
+      first = Math.max(0, Math.min(lines.length - 1, item.evidence.line - item.line));
+      last = Math.max(first, Math.min(lines.length - 1, item.evidence.endLine - item.line));
+      offset = first;
+    }
+    if (query && last - first >= 12) {
+      const windows = [];
+      for (let i = first; i + 12 <= last + 1 || i === first; i++) windows.push({ path: '', line: i, text: prefix(lines.slice(i, i + 12).join('\n'), 1200) });
+      const best = rank(query, windows)[0];
+      if (best.retrievalScore > 0) offset = best.line;
+    }
   }
   const text = full ? item.text : prefix(lines.slice(offset, offset + 12).join('\n'), 1200);
+  const kind = evidenceKind(item.path);
   return { path: item.path, startLine: item.line + offset, endLine: item.line + offset + text.split('\n').length - 1,
-    ...(item.symbol ? { symbol: item.symbol } : {}), text,
+    ...(item.symbol ? { symbol: item.symbol } : {}), ...(kind ? { kind } : {}), text,
     ...(text !== item.text ? { excerptTruncated: true, sourceEndLine: item.endLine } : {}),
     ...(debug && item.probability !== undefined ? { probability: item.probability } : {}) };
 }
-export function renderText(result) {
+// Source lines are routinely longer than a terminal. Soft-wrapping them breaks
+// the gutter, so a wrapped line runs underneath the next line number and the
+// two collide. Clip to the terminal instead and mark it, so one source line is
+// always one row. Redirected output passes no width and stays byte-for-byte
+// complete, which also keeps the output budget independent of the terminal.
+const clip = (line, width) => {
+  if (!width || line.length <= width) return line;
+  const kept = prefix(line, Math.max(1, width - 1));
+  return `${kept}…`;
+};
+export function renderText(result, { width } = {}) {
+  width = Number.isSafeInteger(width) && width >= 40 ? width : 0;
   const lines = [];
   for (const match of result.matches) {
-    lines.push(`${match.path}:${match.startLine}–${match.endLine}${match.symbol ? `  ${match.symbol}` : ''}${match.probability !== undefined ? ` (${match.probability.toFixed(3)})` : ''}`);
-    const width = String(match.endLine).length;
-    lines.push(...match.text.split('\n').map((line, i) => `  ${String(match.startLine + i).padStart(width)} │ ${line}`));
+    lines.push(clip(`${match.path}:${match.startLine}–${match.endLine}${match.symbol ? `  ${match.symbol}` : ''}${match.kind ? `  [${match.kind}]` : ''}${match.probability !== undefined ? ` (${match.probability.toFixed(3)})` : ''}`, width));
+    const gutter = String(match.endLine).length;
+    lines.push(...match.text.split('\n').map((line, i) => clip(`  ${String(match.startLine + i).padStart(gutter)} │ ${line}`, width)));
     if (match.excerptTruncated) lines.push(`… excerpt shortened; source ends at line ${match.sourceEndLine}`);
     lines.push('');
   }
@@ -40,8 +69,8 @@ export function renderText(result) {
   } else if (!result.matches.length) lines.push(result.omittedMatches ? 'Matches found; none fit the output budget.' : 'No matches. This does not establish absence.');
   lines.push(`coverage: ${c.evaluated}/${c.eligible} snippets evaluated · ${c.mode}${c.skipped ? ` · ${c.skipped} files skipped` : ''}`);
   if (result.truncated) lines.push(`output shortened${result.omittedMatches ? ` · ${result.omittedMatches} matches omitted` : ''}; use --full, raise --limit/--max-output, or read the source`);
-  if (result.candidates) lines.push(`candidates: ${JSON.stringify(result.candidates)}`);
-  if (result.diagnostics) lines.push(`debug: ${JSON.stringify(result.diagnostics)}`);
+  if (result.candidates) lines.push(clip(`candidates: ${JSON.stringify(result.candidates)}`, width));
+  if (result.diagnostics) lines.push(clip(`debug: ${JSON.stringify(result.diagnostics)}`, width));
   return clean(lines.join('\n'));
 }
 export function present(raw, { maxOutput = DEFAULT_OUTPUT_BYTES, full = false, debug = false, dryRun = false, dumpCandidates = false } = {}) {

@@ -13,7 +13,7 @@ Usage: jg [options] "search intent" [paths...]
        jg mcp [workspace-root]
        jg login | logout | status
 
-  --threshold N    Minimum match probability (default 0.5; not calibrated)
+  --threshold N    Minimum match score (default 0.5; ranking score, not a probability)
   --limit N        Maximum results (default 5, max 100)
   --candidates N   Locally ranked snippets to judge (default 48, max 256)
   --all            Judge every eligible snippet in the paths (no shortlist)
@@ -105,7 +105,7 @@ async function main() {
   else if (values.files) {
     for (const path of new Set(output.matches.map(m => m.path))) console.log(path.replace(/[\x00-\x1f\x7f]/g, ''));
     if (output.truncated) console.error(`jg: output shortened; ${output.omittedMatches} matches omitted`);
-  } else console.log(renderText(output));
+  } else console.log(renderText(output, { width: process.stdout.isTTY ? process.stdout.columns : undefined }));
   if (!values['dry-run'] && !result.matches.length) process.exitCode = 1;
 }
 main().catch(err => { console.error(`jg: ${err.message}`); process.exitCode = err.name === 'AbortError' ? 130 : 2; });

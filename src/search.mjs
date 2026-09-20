@@ -70,7 +70,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
   const results = [], pending = [];
   for (const candidate of candidates) {
     signal?.throwIfAborted();
-    const key = digest(['jevgrep-relevance-v5', endpoint, digest(token), query, candidate.text, candidate.context || '']);
+    const key = digest(['jevgrep-relevance-v6', endpoint, digest(token), query, candidate.text, candidate.context || '']);
     const value = useCache ? await cached(key) : undefined;
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1) { results.push({ ...candidate, probability: value }); stats.cacheHits++; }
     else pending.push({ candidate, key });
@@ -143,9 +143,18 @@ export async function search(query, paths, options = {}) {
   const stats = { plannedRequests, minimumRequestSpanMs: 0 };
   const evaluated = dryRun || !selected.length ? [] : await score(query, selected, { ...options, useCache, stats });
   // Collapse overlapping windows; never merge source text from different regions.
+  const passing = evaluated.filter(v => v.probability >= threshold);
   const matches = [];
-  for (const item of evaluated.filter(v => v.probability >= threshold)) {
+  for (const item of passing) {
     if (!matches.some(v => v.path === item.path && v.line <= item.endLine && item.line <= v.endLine)) matches.push(item);
+  }
+  // A long match usually answers the query in one of its blocks. Where a
+  // narrower judged snippet inside it also passed, quote that block instead of
+  // guessing lexically. Line numbers stay those of the file on disk.
+  for (const match of matches) {
+    const inside = passing.filter(v => v.path === match.path && v.line >= match.line && v.endLine <= match.endLine && v.endLine - v.line < match.endLine - match.line);
+    const best = inside.sort((a, b) => b.probability - a.probability || a.endLine - a.line - (b.endLine - b.line))[0];
+    if (best) match.evidence = { line: best.line, endLine: best.endLine };
   }
   const warnings = [];
   if (!dryRun && evaluated.length && !matches.length) warnings.push(`No snippet reached threshold ${threshold}; this does not establish absence. Inspect a narrower scope or lower --threshold to review less certain candidates.`);
