@@ -14,7 +14,8 @@ export async function credentials() {
   let config = {};
   try { config = JSON.parse(await readFile(configPath(), 'utf8')); }
   catch (err) { if (err.code !== 'ENOENT') throw new Error('Cannot read jevgrep config.'); }
-  const endpoint = validEndpoint(process.env.JEVGREP_ENDPOINT || config.endpoint || 'https://jevgate.dev');
+  const savedEndpoint = config.endpoint === 'https://jevgate.dev' ? undefined : config.endpoint;
+  const endpoint = validEndpoint(process.env.JEVGREP_ENDPOINT || savedEndpoint || 'https://jevgrep.com');
   // Saved credentials are bound to their origin, including when overriding endpoints.
   return { endpoint, token: process.env.JEVGREP_TOKEN || (config.endpoint === endpoint ? config.token : undefined), email: config.endpoint === endpoint ? config.email : undefined };
 }
@@ -35,18 +36,18 @@ export async function login({ fetchImpl = fetch, open = openBrowser, sleep = ms 
   const start = await response.json();
   const url = new URL(start.url);
   if (url.origin !== endpoint || typeof start.code !== 'string' || typeof start.poll !== 'string' || !Number.isFinite(start.expires_in) || start.expires_in <= 0) throw new Error('Invalid device login response.');
-  console.error(`Sign in with your jevgate account: ${url.href}\nDevice code: ${start.code}`);
+  console.error(`Sign in to Jevgrep: ${url.href}\nDevice code: ${start.code}`);
   open(url.href);
   const deadline = Date.now() + Math.min(start.expires_in, 900) * 1000;
   while (Date.now() < deadline) {
     await sleep(2000);
-    const res = await request(`${endpoint}/api/v1/device/poll?code=${encodeURIComponent(start.code)}&poll=${encodeURIComponent(start.poll)}`, {}, fetchImpl);
+    const res = await request(`${endpoint}/api/v1/device/poll`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: start.code, poll: start.poll }) }, fetchImpl);
     if (res.status === 403 || res.status === 410) throw new Error('Login expired. Run jg login again.');
     if (!res.ok) throw new Error(`Login polling failed (HTTP ${res.status}).`);
     const state = await res.json();
     if (state.status === 'done' && typeof state.token === 'string' && state.token) {
       await save({ endpoint, token: state.token, email: state.email });
-      console.error(`Signed in${state.email ? ` as ${state.email}` : ''}. Search requires jevgrep preview access.`);
+      console.error(`Signed in${state.email ? ` as ${state.email}` : ''}.`);
       return;
     }
     if (!['pending', 'emailed'].includes(state.status)) throw new Error('Invalid login status.');
@@ -60,9 +61,14 @@ function openBrowser(url) {
   child.on('error', () => {});
   child.unref();
 }
-export async function logout() {
+export async function logout({ fetchImpl = fetch } = {}) {
+  const { endpoint, token } = await credentials();
+  if (token) {
+    const res = await request(`${endpoint}/api/v1/token/revoke`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }, fetchImpl);
+    if (!res.ok && res.status !== 401) throw new Error(`Could not revoke login (HTTP ${res.status}). Login retained so you can retry.`);
+  }
   await rm(configPath(), { force: true });
-  console.error('Removed local jevgrep login. Environment tokens and other jevgate sessions are unchanged.');
+  console.error('Signed out of Jevgrep. This CLI token is revoked and the local login is removed.');
 }
 export async function status() {
   const { endpoint, token, email } = await credentials();
@@ -70,6 +76,6 @@ export async function status() {
   if (token) {
     const res = await request(`${endpoint}/api/v1/me`, { headers: { authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`Account check failed (HTTP ${res.status}).`);
-    console.log('Account authenticated. Jevgrep preview access is checked when searching.');
+    console.log('Jevgrep account authenticated.');
   }
 }

@@ -34,7 +34,7 @@ Usage: jg [options] "search intent" [paths...]
 
 JS/TS and Python use syntax boundaries; other files use overlapping windows.
 Stdin defaults to individual lines. Directories respect rg ignore rules.
-Source is sent through jevgate and Vercel AI Gateway to Jev.
+Source is sent through Jevgrep and Vercel AI Gateway to Jev.
 Use exact/ripgrep for exhaustive literal/regex matches. Semantic absence is uncertain.
 Exit codes: 0 matches/preview, 1 no matches, 2 error, 130 interrupted.
 `;

@@ -9,10 +9,9 @@ compact excerpts and a report of how much code was searched. Jev evaluates
 relevance through Vercel AI Gateway. `jg exact` delegates literal/regex search to
 ripgrep without changing its arguments or semantics.
 
-**Preview status:** hosted semantic search is not deployed yet. You can use
-`jg --dry-run` and `jg exact` locally without a login. `jg login` alone does not
-enable hosted search. The public website at **jevgrep.com** is a preview page.
-Authentication currently targets the jevgate account backend.
+**Preview status:** hosted search, email login and CLI connection management live
+at **https://jevgrep.com**. Install the preview and run `jg login`. Dry-run and
+exact searches work without an account.
 
 This preview does not establish exhaustive semantic search or measured coding-agent
 task speedup.
@@ -27,13 +26,13 @@ jg --help
 ```
 
 Installation and personal or internal business use are permitted by the proprietary
-license. Hosted inference requires separate preview access.
+license. Hosted inference requires a Jevgrep account.
 
-## Requirements and preview access
+## Requirements
 
 Requires Node.js 22+ and ripgrep. Python syntax parsing additionally uses Python 3.
 This package contains only the CLI/MCP client. The website and hosted backend are
-separate projects. Hosted semantic search requires preview access; dry-run and
+separate projects. Hosted semantic search requires a Jevgrep login; dry-run and
 exact modes work without a login. Package: `@remotehost/jg` (public npm package).
 
 Selected source and bounded context are sent to the configured backend for real
@@ -48,7 +47,7 @@ From the repository root:
 # Inspect everything that would be evaluated; no model calls or login required.
 jg --all --dry-run "where do we reject expired sessions?" .
 
-# Once hosted search is available to your account:
+# Sign in with jg login, then search:
 jg --all "where do we reject expired sessions?" .
 jg --all --json --limit 30 "retry a failed network operation" .
 ```
@@ -206,27 +205,28 @@ for exact symbols, regex and exhaustive references; do not alias `rg` to `jg`.
 
 ## Authentication and hosted backend
 
-Once hosted search is deployed:
-
 ```sh
 jg login
 jg status
 ```
 
-Login uses jevgate's browser device flow and stores credentials at
-`~/.jevgrep/config.json` with mode 0600. `jg logout` removes that local copy.
-The current identity token is account-wide, not independently scoped/revocable
-per product. New account login retains jevgate's existing trial behavior.
+Login opens Jevgrep's browser device approval page. Sign in by email, verify the
+code matches your terminal, then approve. Credentials are stored at
+`~/.jevgrep/config.json` with mode 0600. Each CLI connection has a separate token
+that expires after 90 days. `jg logout` revokes the current token and removes the
+local login; you can also revoke connections at https://jevgrep.com/account.
 
-The hosted backend is maintained separately. It enforces preview access and
-rate limits server-side and holds the Gateway credentials. This repository does
-not include production account storage, billing configuration, or infrastructure.
+Version 0.5.0 moves authentication and search to Jevgrep's independent backend.
+Old Jevgate logins are not migrated; run `jg login` again. Source and query text
+are not stored in Jevgrep's database; account, hashed token and usage metadata are.
+The server calls Jev through Vercel AI Gateway using server-side credentials.
+This distribution does not include the website, database or infrastructure.
 
 Configuration:
 
 | Variable | Purpose |
 | --- | --- |
-| `JEVGREP_ENDPOINT` | Backend origin; default `https://jevgate.dev` |
+| `JEVGREP_ENDPOINT` | Backend origin; default `https://jevgrep.com` |
 | `JEVGREP_TOKEN` | Explicit token for automation |
 | `JEVGREP_CONFIG_DIR` | Login storage directory |
 | `JEVGREP_CACHE_DIR` | Probability cache; default `~/.cache/jevgrep` |

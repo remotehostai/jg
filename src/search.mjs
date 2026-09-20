@@ -102,7 +102,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
           await delay(300, undefined, { signal: requestSignal });
         }
         if (!response.ok) {
-          const hints = { 401: 'Run jg login again.', 403: 'Your account needs jevgrep preview access.', 404: 'The search endpoint has not been deployed.', 429: 'AI Gateway rate limit reached. Retry later.', 503: 'Search preview is not enabled on this server.' };
+          const hints = { 401: 'Run jg login again.', 403: 'This account is not authorized for this search.', 404: 'The search endpoint has not been deployed.', 429: 'AI Gateway rate limit reached. Retry later.', 503: 'Jevgrep is temporarily unavailable.' };
           throw new Error(`Search failed (HTTP ${response.status}). ${hints[response.status] || 'Try again later.'}`);
         }
         const body = await response.json();
