@@ -5,7 +5,7 @@ Semantic code search for coding agents and humans. Command: `jg`.
 Built by [Remotehost](https://remotehost.ai). Repository: [remotehostai/jg](https://github.com/remotehostai/jg).
 
 Describe the behavior you need; get source excerpts with exact file/line locations,
-match probabilities, and a report of how much code was searched. Jev evaluates
+compact excerpts and a report of how much code was searched. Jev evaluates
 relevance through Vercel AI Gateway. `jg exact` delegates literal/regex search to
 ripgrep without changing its arguments or semantics.
 
@@ -37,8 +37,8 @@ separate projects. Hosted semantic search requires preview access; dry-run and
 exact modes work without a login. Package: `@remotehost/jg` (public npm package).
 
 Selected source and bounded context are sent to the configured backend for real
-inference. Filesystem paths remain local. Use `--dry-run` to inspect payloads
-without network calls.
+inference. Filesystem paths remain local. Use `--dry-run` to inspect the search plan without network calls; add
+`--dump-candidates --json` to inspect bounded candidate source.
 
 ## Search the whole repository
 
@@ -73,8 +73,8 @@ written to stderr; JSON results remain on stdout. Dry-run stats include
 `plannedRequests` and `minimumRequestSpanMs` before accounting for cache hits or
 network latency. These are planning estimates, not a completion-time guarantee.
 
-All-mode still returns the top 10 matches by default. Use `--limit` to return more;
-`coverage.matchingSnippets` shows the count before the result limit.
+All-mode returns the top five matches by default. Use `--limit` (up to 100) to
+return more; `omittedMatches` reports matches excluded by result or output limits.
 
 ## Search behavior
 
@@ -106,7 +106,7 @@ All-mode still returns the top 10 matches by default. Use `--limit` to return mo
   probabilities and expiration, never source text, queries or tokens. Content edits
   invalidate entries. `--no-cache` bypasses it. Model aliases may change within a TTL.
 - Matches are probability-ranked; overlapping windows are deduplicated. Defaults:
-  threshold 0.7 and limit 10. Thresholds are not calibrated on a representative corpus.
+  threshold 0.7 and limit 5. Thresholds are not calibrated on a representative corpus.
 
 ## Output and exact search
 
@@ -118,25 +118,80 @@ jg --dry-run -g '*.ts' "billing rules" src/
 jg exact -n --glob '*.ts' 'refreshToken' src/
 ```
 
-`--json` returns an object with `matches`, `coverage`, `stats`, and `warnings`.
-Each match contains `path`, `line`, `endLine`, `text`, `probability`, and optionally
-`symbol`. Coverage includes discovered/selected/evaluated snippets, skipped files,
-parser counts and whether all eligible snippets were evaluated. `selectedAll` reports whether all discovered snippets were selected. `exhaustive`
-is true only after all discovered snippets were evaluated and no files were skipped;
-it is false for a dry run and never guarantees model recall. A no-match answer is not proof
-that a behavior is absent. Dry runs additionally return the exact candidate text
-and context. Diagnostics go to stderr.
+Plain queries search the current directory recursively, even when an agent runs
+with non-interactive stdin. Supply paths to scope the search. Reading stdin always
+requires an explicit `-` (for example, `cat file.log | jg "expired" -`).
 
-Terminal output shows 20-line excerpts by default; `--full` shows the whole snippet.
-`--files` returns unique paths. Exit codes: 0 matches/preview, 1 no matches, 2 error,
-130 interrupted. `jg exact` preserves ripgrep output and exit status. To search a
-query named `login`, `status`, `mcp` or another subcommand, put `--` before it.
+Default output contains up to five matches, each with its path, exact excerpt
+line range, optional symbol and source text. Excerpts start with at most 12 lines
+and 1,200 characters. One coverage summary follows; probabilities, request timings
+and parser details are hidden unless `--debug` is supplied.
+
+`--json` and MCP share a versioned result schema:
+
+```json
+{
+  "schemaVersion": 1,
+  "matches": [{
+    "path": "src/auth.ts",
+    "startLine": 42,
+    "endLine": 44,
+    "symbol": "validateSession",
+    "text": "if (session.expiresAt <= Date.now()) {\n  throw new Error(\"expired\");\n}"
+  }],
+  "coverage": {
+    "mode": "shortlist",
+    "files": 30,
+    "evaluated": 48,
+    "eligible": 260,
+    "selected": 48,
+    "skipped": 0,
+    "selectionComplete": false,
+    "evaluationComplete": false
+  },
+  "truncated": false,
+  "omittedMatches": 0
+}
+```
+
+`--max-output` bounds each result representation to 8,000 UTF-8 bytes by default,
+including metadata and the CLI trailing newline (range: 1,024–64,000).
+MCP returns the same bounded payload as structured content and a compatible JSON
+text block. The protocol envelope and stderr progress are outside this budget.
+Output is never cut into invalid JSON: excerpts are shortened or lower-ranked
+matches omitted. `truncated` signals any shortened excerpt, omitted match,
+candidate, or diagnostic detail. `omittedMatches` counts excluded matching
+snippets, not excluded files. An excerpt's `endLine` describes its displayed text;
+`excerptTruncated` and `sourceEndLine` identify a shortened source range.
+`--full` requests full snippets but still respects the total budget. Increase
+`--limit` or `--max-output`, or read the source range, for more context.
+
+`selectionComplete` means every discovered eligible snippet was selected.
+`evaluationComplete` additionally requires evaluation to finish with no skipped
+files; it is always false in dry-run mode. Ignored and hidden files are excluded
+from discovery. No coverage flag guarantees model recall, and a no-match response
+is not proof that a behavior is absent.
+
+`--dry-run` prints a compact plan with file/snippet counts and request estimates,
+without source code or model calls. With `--json`, it adds `dryRun` and `plan`
+fields to the same schema. `--dump-candidates` explicitly includes candidate text
+and context within the output budget, with `omittedCandidates` reporting the rest.
+`--debug` adds match probabilities and bounded `diagnostics`; neither option is
+needed for normal agent use.
+
+`--files` prints only unique matching paths, with truncation notices on stderr.
+Progress, when attached to a terminal or explicitly debugging, goes to stderr;
+JSON stdout stays machine-readable. Exit codes: 0 matches/preview, 1 no matches,
+2 error, 130 interrupted. `jg exact` preserves ripgrep output and exit status.
+To search a query named `login`, `status`, `mcp` or another subcommand, put `--`
+before it. `0.4.0` changes the earlier preview JSON contract; consumers should
+use `schemaVersion: 1`, `startLine`, and the coverage fields above.
 
 ## Coding agents
 
 An MCP server is included: `jg mcp /absolute/workspace`. It exposes `search_code`
 with query, scoped paths, result limit, probability threshold, broad search, all-snippet search (`all: true`), evaluation budget (`max_evaluations`),
-dry-run and cache-bypass options. It validates
+dry-run, cache-bypass, `max_output`, `full`, `debug`, and `dump_candidates` options. It validates
 workspace boundaries and returns compact source excerpts plus coverage.
 After installing the client and signing in, register it with Codex:
 

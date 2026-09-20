@@ -135,7 +135,7 @@ export async function score(query, candidates, { token, endpoint, fetchImpl = fe
 
 export async function search(query, paths, options = {}) {
   const start = performance.now();
-  const { limit = 10, threshold = 0.7, candidateLimit = 48, broad = false, all = false, dryRun = false, useCache = true } = options;
+  const { limit = 5, threshold = 0.7, candidateLimit = 48, broad = false, all = false, dryRun = false, useCache = true } = options;
   if (all && broad) throw new Error('Choose all-mode or broad-mode, not both.');
   if (!query?.trim() || query.length > 2000) throw new Error('Query must contain 1–2000 characters.');
   const source = options.input !== undefined ? { candidates: chunks(options.input, '<stdin>', options.chunkLines || 1), skipped: 0, skippedFiles: [], files: 1, parsers: { lines: 1 } } : await collect(paths, options);
