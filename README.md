@@ -9,19 +9,19 @@ compact excerpts and a report of how much code was searched. Jev evaluates
 relevance through Vercel AI Gateway. `jg exact` delegates literal/regex search to
 ripgrep without changing its arguments or semantics.
 
-**Preview status:** hosted search, email login and CLI connection management live
-at **https://jevgrep.com**. Install the preview and run `jg login`. Dry-run and
+Hosted search, email login and CLI connection management live
+at **https://jevgrep.com**. Install the CLI and run `jg login`. Dry-run and
 exact searches work without an account.
 
-This preview does not establish exhaustive semantic search or measured coding-agent
+This release does not establish exhaustive semantic search or measured coding-agent
 task speedup.
 
 ## Install
 
-Install the public preview:
+Install the CLI:
 
 ```sh
-npm install -g @remotehost/jg@preview
+npm install -g @remotehost/jg
 jg --help
 ```
 
@@ -244,6 +244,10 @@ code matches your terminal, then approve. Credentials are stored at
 `~/.jevgrep/config.json` with mode 0600. Each CLI connection has a separate token
 that expires after 90 days. `jg logout` revokes the current token and removes the
 local login; you can also revoke connections at https://jevgrep.com/account.
+
+Version 1.0.0 promotes the 0.6.0 preview CLI to the default npm release.
+Both the `latest` and `preview` tags install 1.0.0. Search behavior and the
+versioned result schema are unchanged from 0.6.0.
 
 Version 0.6.0 changes result scoring and chunking, so results differ from 0.5.x.
 A score is now the product of the two judgments rather than the lower of them,

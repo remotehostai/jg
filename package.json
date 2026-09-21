@@ -1,6 +1,6 @@
 {
   "name": "@remotehost/jg",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Semantic code search for coding agents, powered by Jev",
   "type": "module",
