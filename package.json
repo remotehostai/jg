@@ -1,6 +1,6 @@
 {
   "name": "@remotehost/jg",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Semantic code search for coding agents, powered by Jev",
   "type": "module",
@@ -16,7 +16,7 @@
     "zod": "4.6.5"
   },
   "homepage": "https://jevgrep.com",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "files": [
     "src/*.mjs",
     "README.md",

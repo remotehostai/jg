@@ -25,8 +25,7 @@ npm install -g @remotehost/jg
 jg --help
 ```
 
-Installation and personal or internal business use are permitted by the proprietary
-license. Hosted inference requires a Jevgrep account.
+The CLI is open source under the MIT license. Hosted inference requires a Jevgrep account.
 
 ## Requirements
 
@@ -246,8 +245,8 @@ that expires after 90 days. `jg logout` revokes the current token and removes th
 local login; you can also revoke connections at https://jevgrep.com/account.
 
 Version 1.0.0 promotes the 0.6.0 preview CLI to the default npm release.
-Both the `latest` and `preview` tags install 1.0.0. Search behavior and the
-versioned result schema are unchanged from 0.6.0.
+Search behavior and the versioned result schema are unchanged from 0.6.0.
+Version 1.0.1 licenses the CLI under MIT.
 
 Version 0.6.0 changes result scoring and chunking, so results differ from 0.5.x.
 A score is now the product of the two judgments rather than the lower of them,
@@ -281,7 +280,7 @@ changes. Only HTTPS origins and local HTTP are accepted; requests reject redirec
 
 This repository is a generated CLI distribution. Development, tests and application
 services are maintained separately. Make changes in the internal source repository.
-This public repository contains only the client distribution. The CLI is publicly distributed on npm under a proprietary license.
+This public repository contains only the client distribution. The CLI is publicly distributed on npm under the MIT license.
 
 ## Contributions and support
 
@@ -290,14 +289,11 @@ internally, and external pull requests are not currently accepted. You can repor
 CLI bugs or request features through [GitHub issues](https://github.com/remotehostai/jg/issues).
 Include the package version, operating system and a minimal reproduction using
 non-sensitive sample code. Do not include credentials or private source code.
-The proprietary license governs use; public visibility does not make this open source.
 
 ## License
 
-**Proprietary. All rights reserved.** This is not open-source software.
-You may install and use the unmodified CLI for personal or internal business purposes.
-Modification, redistribution, resale and sublicensing require separate written permission.
-See [LICENSE](LICENSE). Third-party dependencies retain their own licenses.
-Public npm availability does not make this software open source.
+The CLI is licensed under the [MIT License](LICENSE). Third-party dependencies
+retain their own licenses. The separately maintained hosted service, backend,
+and database code are outside this CLI distribution.
 
 Not affiliated with TypeSafe, Vercel or OpenAI.

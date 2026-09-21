@@ -1,28 +1,21 @@
-Proprietary CLI License
+MIT License
 
-Copyright (c) 2026 Remotehost. All rights reserved.
+Copyright (c) 2026 Remotehost
 
-Remotehost grants you a non-exclusive, worldwide, royalty-free license to
-install, execute, and make copies reasonably necessary to use the unmodified
-jevgrep CLI software and its documentation (the "Software") for personal or
-internal business purposes, including use by coding agents on your behalf.
-You must preserve copyright and license notices in all permitted copies.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Except for the permissions above or as required by applicable law, you may not
-modify, redistribute, sublicense, sell, or create derivative works of the
-Software without separate written permission from Remotehost. All rights not
-expressly granted are reserved. Public availability of the Software does not
-make it open-source software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-This license does not grant access to hosted services, inference credits, or
-rights to Remotehost trademarks. Hosted services require separate authorization
-and may be subject to additional terms and fees. This license applies only to
-the CLI Software, not to separately maintained backend, website, or infrastructure.
-Third-party components remain subject to their respective licenses; this license
-does not restrict rights granted by those licenses.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
-NONINFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT
-HOLDER IS NOT LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE
-SOFTWARE OR ITS USE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
